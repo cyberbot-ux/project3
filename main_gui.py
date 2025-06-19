@@ -1,10 +1,11 @@
-#desgined and developed by prem patel
+#designed and developed by prem patel
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 import os
 import sys
 import shutil
 import pandas as pd
+from tksheet import Sheet
 from program_manager import add_file_to_cache, get_transactions
 from report_analyzer import group_by_date_with_summary, group_by_date_totals_only, ebt_summary_report
 from pdf_exporter import export_to_pdf
@@ -24,9 +25,6 @@ class TransactionViewerApp:
         self.base_path = get_app_base_path()
         self.xml_folder = os.path.join(self.base_path, "xml_files")
         os.makedirs(self.xml_folder, exist_ok=True)
-
-        style = ttk.Style()
-        style.map("Treeview", background=[("selected", "white")], foreground=[("selected", "black")])
 
         self.file_list = []
         self.dataframe = pd.DataFrame()
@@ -50,7 +48,7 @@ class TransactionViewerApp:
         self.sort_order.bind("<<ComboboxSelected>>", lambda e: self.on_view_option_change())
 
         ttk.Label(toolbar, text="Option:").pack(side=tk.LEFT)
-        self.view_option = ttk.Combobox(toolbar, values=["With EBT food","Group by Date", "Daily Totals"], state="readonly")
+        self.view_option = ttk.Combobox(toolbar, values=["With EBT food", "Group by Date", "Daily Totals"], state="readonly")
         self.view_option.current(0)
         self.view_option.pack(side=tk.LEFT, padx=5)
         self.view_option.bind("<<ComboboxSelected>>", lambda e: self.on_view_option_change())
@@ -67,12 +65,41 @@ class TransactionViewerApp:
         ttk.Button(toolbar, text="Add XML File", command=self.import_file).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="Export PDF", command=self.export_pdf).pack(side=tk.LEFT, padx=5)
         ttk.Button(toolbar, text="Export Excel", command=self.export_excel).pack(side=tk.LEFT, padx=5)
-      
+
+        ttk.Label(toolbar, text="Font Size:").pack(side=tk.LEFT, padx=(20, 2))
+        self.font_size_spin = ttk.Spinbox(toolbar, from_=8, to=24, width=5, command=self.update_font_size)
+        self.font_size_spin.set(11)
+        self.font_size_spin.pack(side=tk.LEFT)
+
         branding = ttk.Label(self.root, text="© Sant Corporation", font=("Segoe UI", 10, "italic"))
         branding.pack(pady=(0, 5))
 
-        self.tree = ttk.Treeview(self.root)
-        self.tree.pack(expand=True, fill=tk.BOTH, padx=10, pady=10)
+        self.sheet_frame = tk.Frame(self.root)
+        self.sheet_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        self.sheet = Sheet(
+            self.sheet_frame,
+            headers=[],
+            data=[],
+            show_x_scrollbar=True,
+            show_y_scrollbar=True,
+            font=("Segoe UI", 11,"normal"),
+            header_font=("Segoe UI", 11, "bold")
+        )
+        self.sheet.enable_bindings(
+            "row_select", "column_width_resize", "arrowkeys", "right_click_popup_menu",
+            "rc_select", "copy", "paste", "delete", "undo", "edit_cell"
+        )
+        self.sheet.grid(row=0, column=0, sticky="nswe")
+        self.sheet_frame.grid_rowconfigure(0, weight=1)
+        self.sheet_frame.grid_columnconfigure(0, weight=1)
+        self.sheet.row_height("all", 28)
+
+    def update_font_size(self):
+        size = int(self.font_size_spin.get())
+        self.sheet.font(newfont=("Segoe UI", size))
+        self.sheet.header_font(newfont=("Segoe UI", size, "bold"))
+        self.sheet.refresh()
 
     def auto_load_existing_files(self):
         for file in os.listdir(self.xml_folder):
@@ -92,7 +119,6 @@ class TransactionViewerApp:
         if not file_path:
             return
 
-        # Save to the dynamic XML folder
         filename = os.path.basename(file_path)
         dest_path = os.path.join(self.xml_folder, filename)
 
@@ -105,7 +131,6 @@ class TransactionViewerApp:
         self.refresh_file_list()
         self.file_selector.set(filename)
         self.update_table()
-
 
     def update_table(self):
         if not self.file_list:
@@ -124,17 +149,15 @@ class TransactionViewerApp:
 
         df = report_dispatch.get(view_mode, lambda: pd.DataFrame())()
         self.dataframe = df.copy()
-        self.update_tree_from_dataframe()
+        self.update_sheet_from_dataframe()
 
-    def update_tree_from_dataframe(self):
-        self.tree.delete(*self.tree.get_children())
-        self.tree["columns"] = list(self.dataframe.columns)
-        self.tree["show"] = "headings"
-        for col in self.dataframe.columns:
-            self.tree.heading(col, text=col)
-            self.tree.column(col, anchor="w")
-        for _, row in self.dataframe.iterrows():
-            self.tree.insert("", "end", values=list(row))
+    def update_sheet_from_dataframe(self):
+        self.sheet.set_sheet_data(self.dataframe.values.tolist(), reset_col_positions=True, reset_row_positions=True)
+        self.sheet.headers(self.dataframe.columns.tolist())
+        self.sheet.total_columns(len(self.dataframe.columns))  
+        self.sheet.set_all_column_widths()
+        self.sheet.refresh()
+
 
     def export_pdf(self):
         if self.dataframe.empty:
@@ -175,5 +198,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = TransactionViewerApp(root)
     root.mainloop()
-
-
